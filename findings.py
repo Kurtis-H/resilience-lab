@@ -43,7 +43,8 @@ FINDINGS = [
         component="booking API",
         fault="Another session holds an exclusive lock on `seats`",
         expected="Requests that need the table fail fast with 503, within a few seconds",
-        status="open",
+        status="fixed",
+        fixed_in="api-performance-lab#18",
     ),
     Finding(
         id="RL-02",
@@ -52,7 +53,8 @@ FINDINGS = [
         component="booking API",
         fault="The database stops accepting connections",
         expected="503 in the API's usual JSON error format, with Retry-After, so clients know to retry",
-        status="open",
+        status="fixed",
+        fixed_in="api-performance-lab#18",
     ),
     Finding(
         id="RL-03",
@@ -61,7 +63,8 @@ FINDINGS = [
         component="booking API",
         fault="The database stops accepting connections",
         expected="A readiness check answers 503, so a load balancer stops sending traffic",
-        status="open",
+        status="fixed",
+        fixed_in="api-performance-lab#18",
     ),
     Finding(
         id="RL-04",
@@ -70,7 +73,8 @@ FINDINGS = [
         component="booking-web",
         fault="The API accepts connections but never sends a response",
         expected="The page gives up after a time limit and shows an error",
-        status="open",
+        status="fixed",
+        fixed_in="booking-web#17",
     ),
 ]
 
