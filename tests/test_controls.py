@@ -45,10 +45,13 @@ def test_database_latency_slows_requests_but_none_fail(api: httpx.Client, toxi) 
     print(f"median GET /events: {fast * 1000:.0f} ms -> {slow * 1000:.0f} ms with 50 ms database latency")
 
 
-def test_dropped_database_connections_never_leave_half_an_order(
+def test_dropped_database_connections_never_leave_half_an_order_or_no_answer(
     api: httpx.Client, toxi, database_url: str, new_event
 ) -> None:
-    """Connections reset while orders are in flight: every order is all or nothing."""
+    """Connections reset while orders are in flight: every order is all or nothing,
+    and every buyer gets an answer (201, or 503 with Retry-After), never a dropped
+    connection or a bare 500 (resilience-lab RL-02's retest).
+    """
     event_id, seats = new_event(40)
     buyers = [{"X-API-Key": f"key-user-{n}"} for n in range(120, 140)]
 
@@ -69,6 +72,7 @@ def test_dropped_database_connections_never_leave_half_an_order(
     toxi.reset()
     wait_until_serving(api)
     codes = [code for code, _ in results]
+    assert set(codes) <= {201, 503}, f"every order should get 201 or 503: {sorted(codes)}"
     assert any(code == 201 for code in codes), f"no order succeeded: {codes}"
     assert any(code != 201 for code in codes), f"control: the resets hit no order: {codes}"
 

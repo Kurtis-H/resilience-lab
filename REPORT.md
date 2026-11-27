@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Version | 1.0 (initial assessment) |
-| Date | 27 November 2026 |
+| Version | 1.1 (retest after remediation) |
+| Date | 27 November 2026 (assessment and retest) |
 | Prepared by | Kurtis H |
 | Targets | Booking API ([api-performance-lab](https://github.com/Kurtis-H/api-performance-lab)) and web app ([booking-web](https://github.com/Kurtis-H/booking-web)) |
 | Approach | Fault injection with [Toxiproxy](https://github.com/Shopify/toxiproxy) and database locks, against the running stack in CI |
@@ -11,6 +11,8 @@
 ## 1. Executive summary
 
 The booking platform was run with its dependencies failing on purpose: the database refusing connections, answering slowly, dropping connections mid-request and staying locked, and the API going silent for the web app. **4 findings were raised: 1 High, 3 Medium and 0 Low.** Each is an automated experiment, so it can be rerun after a fix.
+
+**Retest (version 1.1):** all four findings are fixed and verified by rerunning their experiments. See [section 7](#7-retest).
 
 The most serious issue is that the API has no time limits. When another session locks a table, as a long migration would, requests that need it wait until the lock is released. Each one holds a worker thread and a database connection, so a lock that lasts long enough stalls the whole service (RL-01). The web app has the same gap: if the API stops answering, pages wait forever (RL-04).
 
@@ -54,10 +56,10 @@ Severity is rated on what a real deployment would suffer: High when one fault ca
 
 | ID | Finding | Severity | Component | Status |
 |---|---|---|---|---|
-| RL-01 | A locked table stalls requests until the lock is released | High | booking API | open |
-| RL-02 | A database outage returns a bare 500 | Medium | booking API | open |
-| RL-03 | Nothing reports that the database is down | Medium | booking API | open |
-| RL-04 | The web app waits forever on an API that doesn't answer | Medium | booking-web | open |
+| RL-01 | A locked table stalls requests until the lock is released | High | booking API | fixed (api-performance-lab#18) |
+| RL-02 | A database outage returns a bare 500 | Medium | booking API | fixed (api-performance-lab#18) |
+| RL-03 | Nothing reports that the database is down | Medium | booking API | fixed (api-performance-lab#18) |
+| RL-04 | The web app waits forever on an API that doesn't answer | Medium | booking-web | fixed (booking-web#17) |
 
 ## 5. Findings
 
@@ -125,6 +127,19 @@ These experiments passed and are kept as tests in [`tests/test_controls.py`](tes
 - **Latency degrades gracefully.** With 50 ms added to every database response, `GET /events` slowed from a few milliseconds to about a quarter of a second (each request makes several round trips), and none failed.
 - **Orders are all or nothing.** With database connections reset while 20 orders were in flight, every seat marked sold belonged to an order, no order was left without seats, and every order the API confirmed was in the database.
 - **The web app reports an API outage.** With the API unreachable, the events page shows its "couldn't load" error.
+
+## 7. Retest
+
+The fixes were retested on 27 November 2026 against `main` of both apps, by rerunning each finding's experiment. A fixed finding's test now fails if the weakness comes back.
+
+| ID | Fix | Retest result |
+|---|---|---|
+| RL-01 | [api-performance-lab#18](https://github.com/Kurtis-H/api-performance-lab/pull/18): `lock_timeout` (3 s) and `statement_timeout` (10 s) on every database connection, plus a connect timeout | With `seats` locked: `503` after about 3 s, instead of no answer after 20 s. The test requires a 503 within 10 s |
+| RL-02 | api-performance-lab#18: database errors and timeouts become `503` with `Retry-After: 5` in the usual JSON error format. For an order, the message says to check your orders first | Database down: `503`, JSON, `Retry-After: 5`, in milliseconds |
+| RL-03 | api-performance-lab#18: `GET /ready` checks the database; `/health` stays liveness | Database down: `/ready` `503`, `/health` `200` |
+| RL-04 | [booking-web#17](https://github.com/Kurtis-H/booking-web/pull/17): every request has a 10 s limit. A timed-out or `503` order says its outcome is unknown and to check My orders | Silent API: the events page shows its error after about 21 s (10 s, one retry, 10 s), instead of loading forever |
+
+**Tightened control.** The dropped-connection experiment now also requires every order to get an answer: `201`, or `503` with `Retry-After`. Before the fix, some orders got a bare `500` and a few got no HTTP response at all. That is the RL-02 retest under real load.
 
 ## Appendix A: Reproducing the experiments
 

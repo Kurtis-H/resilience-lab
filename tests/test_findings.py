@@ -63,8 +63,10 @@ def test_rl01_a_locked_table_stalls_requests(api: httpx.Client, database_url: st
     start = time.monotonic()
     try:
         response = api.get(f"/events/{event_id}/seats", params={"limit": 1}, timeout=patience)
-        outcome = f"{response.status_code} after {time.monotonic() - start:.1f} s"
-        stalled = False
+        took = time.monotonic() - start
+        outcome = f"{response.status_code} after {took:.1f} s"
+        # Fixed means failing fast: a 503 within a few seconds, not a late answer.
+        stalled = response.status_code != 503 or took > 10
     except httpx.TimeoutException:
         outcome = f"no answer after {patience:.0f} s"
         stalled = True
