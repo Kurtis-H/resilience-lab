@@ -20,6 +20,8 @@ browser -> booking-web -> [toxiproxy: api] -> booking API -> [toxiproxy: db] -> 
 
 Version 1.1 of the [report](REPORT.md) is the retest: all 4 findings are fixed and verified (RL-01 to RL-03 in the API, RL-04 in booking-web).
 
+The live status of every finding is on the [quality dashboard](https://kurtis-h.github.io/quality-dashboard/), read from this repo's `findings.py`.
+
 ## Contained by design
 
 Everything runs in a disposable GitHub Actions runner. Toxiproxy listens on the runner's loopback interface only, and the API, the web app and Postgres are bound to `127.0.0.1` as well. Every experiment removes its faults and waits for the API to serve again before the next one starts.
