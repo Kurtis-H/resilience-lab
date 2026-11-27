@@ -1,0 +1,114 @@
+name: Resilience
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly: the apps change in their own repos, and the report must still be true.
+    - cron: "23 9 * * 4"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - run: pip install --require-hashes -r requirements.txt
+      - run: ruff check .
+      - run: ruff format --check .
+      - name: The report matches the register
+        run: python -m pytest -v -p no:cacheprovider tests/test_report.py
+
+  experiments:
+    name: Fault injection experiments
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: booking
+        ports: ["127.0.0.1:5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      TOXIPROXY_URL: http://127.0.0.1:8474
+      API_URL: http://127.0.0.1:8000
+      WEB_URL: http://127.0.0.1:4173
+      # Direct to Postgres, for locks and consistency checks. The API itself
+      # connects through Toxiproxy (see "Start the booking API").
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/booking
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The targets, at main: the report must stay true as they change.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository_owner }}/api-performance-lab
+          path: stack/api
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository_owner }}/booking-web
+          path: stack/web
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - run: pip install --require-hashes -r requirements.txt
+      - name: Start Toxiproxy, on the runner's loopback interface only
+        run: |
+          docker run -d --name toxiproxy --net=host ghcr.io/shopify/toxiproxy:latest -host=127.0.0.1
+          for i in $(seq 1 30); do curl -sf "$TOXIPROXY_URL/version" && break; sleep 1; done
+          docker image inspect ghcr.io/shopify/toxiproxy:latest --format '{{index .RepoDigests 0}}'
+          python scripts/proxies.py
+      - name: Start the booking API, connected through the db proxy
+        working-directory: stack/api
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:15432/booking
+        run: |
+          pip install .
+          python -m app.seed --events 30 --seats 40 --users 200
+          nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 > ../api.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf "$API_URL/health" && exit 0; sleep 1; done
+          cat ../api.log; exit 1
+      - name: Build and serve booking-web, connected through the api proxy
+        working-directory: stack/web
+        env:
+          API_URL: http://127.0.0.1:18000
+        run: |
+          npm ci
+          npm run build
+          nohup npx vite preview --host 127.0.0.1 --port 4173 --strictPort > ../web.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf "$WEB_URL/" > /dev/null && exit 0; sleep 1; done
+          cat ../web.log; exit 1
+      - run: python -m playwright install --with-deps chromium
+      - name: Findings reproduce (or stay fixed), controls hold, the report matches
+        run: python -m pytest -v -s -p no:cacheprovider
+      - name: Evidence
+        if: always()
+        run: |
+          [ -f results/evidence.md ] && cat results/evidence.md >> "$GITHUB_STEP_SUMMARY"
+          cat results/evidence.md 2>/dev/null || true
+      - name: Logs
+        if: failure()
+        run: |
+          tail -n 200 stack/api.log || true
+          docker logs toxiproxy 2>&1 | tail -n 100 || true
