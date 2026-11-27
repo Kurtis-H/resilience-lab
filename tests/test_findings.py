@@ -81,7 +81,11 @@ def test_rl02_a_database_outage_returns_a_bare_500(api: httpx.Client, toxi) -> N
     took = time.monotonic() - start
     kind = response.headers.get("content-type", "none")
     retry = response.headers.get("retry-after")
-    graceful = response.status_code == 503 and kind.startswith("application/problem+json") and bool(retry)
+    try:
+        has_detail = "detail" in response.json()
+    except ValueError:
+        has_detail = False
+    graceful = response.status_code == 503 and has_detail and bool(retry)
     verdict(
         "RL-02",
         not graceful,

@@ -51,7 +51,7 @@ FINDINGS = [
         severity="Medium",
         component="booking API",
         fault="The database stops accepting connections",
-        expected="503 with a problem+json body and Retry-After, so clients know to retry",
+        expected="503 in the API's usual JSON error format, with Retry-After, so clients know to retry",
         status="open",
     ),
     Finding(

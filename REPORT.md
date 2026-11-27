@@ -81,13 +81,13 @@ Severity is rated on what a real deployment would suffer: High when one fault ca
 
 **Fault.** The database stops accepting connections.
 
-**Expected.** 503 with a problem+json body and Retry-After, so clients know to retry.
+**Expected.** 503 in the API's usual JSON error format, with Retry-After, so clients know to retry.
 
 **Observed.** `500 Internal Server Error`, as `text/plain`, with no `Retry-After`. It was fast (about 10 ms), which is good. While database connections were being reset during orders, some requests got no HTTP response at all: the API closed the connection.
 
-**Impact.** A client can't tell an outage from a bug, has no hint when to retry, and doesn't get the API's usual error format. Monitoring counts it as a server bug. A dropped connection is worse: the client doesn't know whether its order went through.
+**Impact.** A client can't tell an outage from a bug, has no hint when to retry, and doesn't get the API's usual JSON error (`{"detail": ...}`). Monitoring counts it as a server bug. A dropped connection is worse: the client doesn't know whether its order went through.
 
-**Remediation.** Handle database connection errors in one place: answer `503` with a problem+json body and `Retry-After`, and count them in a metric.
+**Remediation.** Handle database connection errors in one place: answer `503` in the usual JSON error format with `Retry-After`, and count them in a metric.
 
 ### RL-03: Nothing reports that the database is down
 
