@@ -46,7 +46,7 @@ Each experiment states a fault, what a resilient system would do under it, and t
 | Dropped database connections | Toxiproxy `reset_peer` toxic while orders are in flight |
 | Locked table | A second session takes `LOCK TABLE seats IN ACCESS EXCLUSIVE MODE`, as a migration would |
 | API outage | Toxiproxy's `api` proxy disabled |
-| Silent API | Toxiproxy `timeout` toxic with no timeout: connections stay open, no response ever arrives |
+| Silent API | Toxiproxy `timeout` toxic on requests, with no timeout: connections stay open, the API never sees the request, no response arrives |
 
 Severity is rated on what a real deployment would suffer: High when one fault can take down the whole service, Medium when users or operators get the wrong signal, Low for cosmetic issues.
 

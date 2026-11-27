@@ -106,8 +106,11 @@ def test_rl03_nothing_reports_the_database_is_down(api: httpx.Client, toxi) -> N
 
 
 def test_rl04_the_web_app_waits_forever_on_a_silent_api(toxi, web_url: str) -> None:
-    # The API's responses never arrive: connections open, nothing comes back.
-    toxi.toxic("api", "timeout", stream="downstream", timeout=0)
+    # The API goes silent: connections open, but requests never reach it and
+    # nothing comes back. (Dropping only the responses isn't enough: when the
+    # API closes its side, the proxy closes the client's too, and the page
+    # sees a fast error instead of a hang.)
+    toxi.toxic("api", "timeout", stream="upstream", timeout=0)
     patience_ms = 30_000
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=os.environ.get("PW_EXECUTABLE") or None)

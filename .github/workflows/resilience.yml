@@ -75,9 +75,12 @@ jobs:
       - run: pip install --require-hashes -r requirements.txt
       - name: Start Toxiproxy, on the runner's loopback interface only
         run: |
-          docker run -d --name toxiproxy --net=host ghcr.io/shopify/toxiproxy:latest -host=127.0.0.1
+          # Pinned by digest. Dependabot can't bump images run this way: update
+          # the digest by hand when moving to a new Toxiproxy release.
+          docker run -d --name toxiproxy --net=host \
+            ghcr.io/shopify/toxiproxy@sha256:5d3dae09bc185dcc5ff6cf43abf6062a4a720aff0c4306a471e773acdcd107aa \
+            -host=127.0.0.1
           for i in $(seq 1 30); do curl -sf "$TOXIPROXY_URL/version" && break; sleep 1; done
-          docker image inspect ghcr.io/shopify/toxiproxy:latest --format '{{index .RepoDigests 0}}'
           python scripts/proxies.py
       - name: Start the booking API, connected through the db proxy
         working-directory: stack/api
@@ -111,4 +114,5 @@ jobs:
         if: failure()
         run: |
           tail -n 200 stack/api.log || true
+          tail -n 100 stack/web.log || true
           docker logs toxiproxy 2>&1 | tail -n 100 || true
